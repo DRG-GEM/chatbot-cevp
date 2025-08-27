@@ -121,172 +121,178 @@
   </div>
 
   <script>
-  window.addEventListener('DOMContentLoaded', () => {
-    const BASE = 'https://web.virgendelpasico.net';
-    const LS_KEY = 'cevp_chat_history_v1';
+window.addEventListener('DOMContentLoaded', () => {
+  const BASE   = 'https://web.virgendelpasico.net';
+  const LS_KEY = 'cevp_chat_history_v1';
 
-    const chat    = document.getElementById('chat');
-    const input   = document.getElementById('msg');
-    const sendBtn = document.getElementById('send');
-    const clearBtn= document.getElementById('clear');
+  const chat     = document.getElementById('chat');
+  const input    = document.getElementById('msg');
+  const sendBtn  = document.getElementById('send');
+  const clearBtn = document.getElementById('clear');
 
-    let awaitingConsentForChips = false;
-    let fuse = null;
-    let data = [];
+  let awaitingConsentForChips = false;
+  let fuse = null;
+  let data = [];
 
-    /* 1) Cargar faqs.json (DEBE estar en la misma carpeta) */
-    fetch('./faqs.json', { cache:'no-store' })
-      .then(r => r.json())
-      .then(json => { data = json; initFuse(); init(); })
-      .catch(() => { data = []; init(); });
+  /* -------- utilidades base -------- */
+  function stripAccents(s){ return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
 
-    function initFuse(){
-      if (typeof Fuse === 'undefined') return;
-      fuse = new Fuse(data, {
-        includeScore: true, threshold: 0.5,
-        keys: [
-          { name:'pregunta',  weight:0.6 },
-          { name:'tema',      weight:0.2 },
-          { name:'etiquetas', weight:0.2 }
-        ]
-      });
-    }
-
-    /* Utilidades */
-    function fixLinks(scope){
-      scope.querySelectorAll('a[href]').forEach(a=>{
-        let href=a.getAttribute('href')||'';
-        if (href.startsWith('/')) { href = BASE + href; a.setAttribute('href', href); }
-        if (/^(https?:|mailto:|tel:)/i.test(href)) { a.target='_blank'; a.rel='noopener noreferrer'; }
-      });
-    }
-    function saveMessage(html, who){
-      try{
-        const d = JSON.parse(localStorage.getItem(LS_KEY)||'[]');
-        d.push({ html, who, ts: Date.now() });
-        localStorage.setItem(LS_KEY, JSON.stringify(d));
-      }catch{}
-    }
-    function addBubble(html, who='bot', save=true){
-      const row = document.createElement('div');
-      row.className = 'c-row' + (who==='user' ? ' c-user' : '');
-      const b = document.createElement('div');
-      b.className = 'c-bubble' + (who==='user' ? '' : ' c-bot');
-      b.innerHTML = html;
-      row.appendChild(b); chat.appendChild(row); chat.scrollTop = chat.scrollHeight;
-      fixLinks(b); if (save) saveMessage(html, who); return b;
-    }
-    function loadHistory(){ try{ (JSON.parse(localStorage.getItem(LS_KEY)||'[]')).forEach(m=>addBubble(m.html,m.who,false)); }catch{} }
-    function clearHistory(){ localStorage.removeItem(LS_KEY); chat.innerHTML=''; greet(); }
-
-    /* UI sugerencias */
-    function addChips(labels){
-      if (!labels || !labels.length) return;
-      const wrap=document.createElement('div'); wrap.className='c-chips';
-      labels.forEach(t=>{ const c=document.createElement('div'); c.className='c-chip'; c.textContent=t; c.onclick=()=>handleChip(t); wrap.appendChild(c); });
-      chat.appendChild(wrap); chat.scrollTop=chat.scrollHeight;
-    }
-    function getSuggestions(){ return ['Horarios','Calendario','Comedor','Extraescolares','Libros y material','Transporte','Hablar con una persona']; }
-    function handleChip(t){
-      if (t==='Hablar con una persona'){
-        addBubble(t,'user');
-        addBubble('📞 Secretaría: <a href="tel:+34968336433">968 33 64 33</a> · <a href="mailto:secretaria@virgendelpasico.net">secretaria@virgendelpasico.net</a> (9:00–14:00)','bot');
-        return;
-      }
-      addBubble(t,'user'); showReply( respond(t) );
-    }
-
-    /* Flujo */
-    function greet(){
-      addBubble('👋 Hola, soy el asistente del cole. Dime qué necesitas y te ayudo.<br><br>¿Quieres que te muestre algunos temas frecuentes? Responde <b>“Sí”</b> (o “vale”, “ok”).');
-      awaitingConsentForChips = true;
-    }
-    function showReply(obj){ addBubble(obj.html,'bot'); if (obj.options?.length) addChips(obj.options); }
-
-    function stripAccents(s){ return s.normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
-    function respond(text){
-      if (awaitingConsentForChips){
-        const t = stripAccents(text.toLowerCase().trim());
-        const afirm = ['si','sí','vale','ok','de acuerdo','claro','por supuesto'].map(stripAccents);
-        const neg   = ['no','nop','negativo'];
-        if (afirm.includes(t)) { awaitingConsentForChips=false; return { html:'Perfecto 👍 Te dejo algunos temas por si te orienta 👇', options:getSuggestions() }; }
-        if (neg.includes(t))   { awaitingConsentForChips=false; return { html:'Perfecto, pues dime qué necesitas. 🙂', options:[] }; }
-        awaitingConsentForChips=false; // seguimos flujo normal si escribió otra cosa
-      }
-      if (/(humano|persona|secretar)/i.test(text)){
-        return { html:'📞 Secretaría: <a href="tel:+34968336433">968 33 64 33</a> · <a href="mailto:secretaria@virgendelpasico.net">secretaria@virgendelpasico.net</a> (9:00–14:00)', options:[] };
-      }
-      if (!fuse || !data.length){
-        return { html:'Ahora mismo no tengo la base cargada. Prueba con una palabra clave (p. ej., “comedor”, “calendario”).', options:getSuggestions() };
-      }
-      // --- BLOQUE NUEVO (pegar en su lugar) ---
-const q = stripAccents(text.toLowerCase().trim());
-
-// Fallback directo por palabra clave (calendario, horario, comedor, etc.)
-const keywordFallback = (q) => {
-  const pick = (pred) => data.find(pred);
-  const has = (s,k) => stripAccents(String(s||'').toLowerCase()).includes(k);
-
-  const tryKeyword = (k, tema) => {
-    if (!q.includes(k)) return null;
-    // 1) por tema
-    let item = pick(x => has(x.tema, tema));
-    if (item) return { html: item.respuesta, options: [] };
-    // 2) por etiquetas
-    item = pick(x => Array.isArray(x.etiquetas) && x.etiquetas.some(t => has(t, k)));
-    if (item) return { html: item.respuesta, options: [] };
-    return null;
-  };
-
-  // añade más si quieres
-  return (
-    tryKeyword('calendario','calendario') ||
-    tryKeyword('horario','horario')       ||
-    tryKeyword('comedor','comedor')      ||
-    tryKeyword('libros','libros')        ||
-    tryKeyword('material','material')    ||
-    tryKeyword('extraescolar','extraescolar') ||
-    tryKeyword('transporte','transporte')
-  );
-};
-
-// 1) prueba Fuse
-const res = (fuse ? fuse.search(text) : []).slice(0,1);
-
-// 2) si no convence el score, usa fallback por palabra clave
-if (!res.length || res[0].score > 0.70) {
-  const fb = keywordFallback(q);
-  if (fb) return fb;
-  return { html:'No estoy del todo seguro 🤔. Prueba con una palabra clave (p. ej., “comedor”, “calendario”) o dime un poco más.', options: getSuggestions() };
-}
-
-// 3) acepta el mejor resultado
-const hit = res[0].item;
-return { html: hit.respuesta, options: [] };
-
-
-    function init(){ const hasHist = !!localStorage.getItem(LS_KEY); if (hasHist) loadHistory(); else greet(); }
-
-    /* Eventos */
-    sendBtn.onclick = () => {
-      const text = (input.value || '').trim(); if (!text) return;
-      addBubble(text,'user'); input.value = '';
-      const reply = respond(text); showReply(reply);
-    };
-    input.addEventListener('keydown', e => { if (e.key==='Enter') sendBtn.click(); });
-    clearBtn.addEventListener('click', clearHistory);
-
-    /* Enlaces siempre fuera (sin iframes) */
-    document.addEventListener('click', e => {
-      const a = e.target.closest('a[href]'); if(!a) return;
-      e.preventDefault();
-      const href = a.getAttribute('href') || '';
-      const url = href.startsWith('/') ? (BASE + href) : href;
-      window.open(url, '_blank', 'noopener');
+  function fixLinks(scope){
+    scope.querySelectorAll('a[href]').forEach(a=>{
+      let href=a.getAttribute('href')||'';
+      if (href.startsWith('/')) { href = BASE + href; a.setAttribute('href', href); }
+      if (/^(https?:|mailto:|tel:)/i.test(href)) { a.target='_blank'; a.rel='noopener noreferrer'; }
     });
+  }
 
-    init();
+  function saveMessage(html, who){
+    try{
+      const d = JSON.parse(localStorage.getItem(LS_KEY)||'[]');
+      d.push({ html, who, ts: Date.now() });
+      localStorage.setItem(LS_KEY, JSON.stringify(d));
+    }catch{}
+  }
+
+  function addBubble(html, who='bot', save=true){
+    const row = document.createElement('div');
+    row.className = 'c-row' + (who==='user' ? ' c-user' : '');
+    const b = document.createElement('div');
+    b.className = 'c-bubble' + (who==='user' ? '' : ' c-bot');
+    b.innerHTML = html;
+    row.appendChild(b);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+    fixLinks(b);
+    if (save) saveMessage(html, who);
+    return b;
+  }
+
+  function loadHistory(){
+    try{ (JSON.parse(localStorage.getItem(LS_KEY)||'[]')).forEach(m=>addBubble(m.html,m.who,false)); }catch{}
+  }
+  function clearHistory(){ localStorage.removeItem(LS_KEY); chat.innerHTML=''; greet(); }
+
+  function addChips(labels){
+    if (!labels || !labels.length) return;
+    const wrap=document.createElement('div'); wrap.className='c-chips';
+    labels.forEach(t=>{ const c=document.createElement('div'); c.className='c-chip'; c.textContent=t; c.onclick=()=>handleChip(t); wrap.appendChild(c); });
+    chat.appendChild(wrap); chat.scrollTop=chat.scrollHeight;
+  }
+  function getSuggestions(){ return ['Horarios','Calendario','Comedor','Extraescolares','Libros y material','Transporte','Hablar con una persona']; }
+
+  function handleChip(t){
+    if (t==='Hablar con una persona'){
+      addBubble(t,'user');
+      addBubble('📞 Secretaría: <a href="tel:+34968336433">968 33 64 33</a> · <a href="mailto:secretaria@virgendelpasico.net">secretaria@virgendelpasico.net</a> (9:00–14:00)','bot');
+      return;
+    }
+    addBubble(t,'user'); showReply( respond(t) );
+  }
+
+  function greet(){
+    addBubble('👋 Hola, soy el asistente del cole. Dime qué necesitas y te ayudo.<br><br>¿Quieres que te muestre algunos temas frecuentes? Responde <b>“Sí”</b> (o “vale”, “ok”).');
+    awaitingConsentForChips = true;
+  }
+
+  function showReply(obj){ addBubble(obj.html,'bot'); if (obj.options?.length) addChips(obj.options); }
+
+  /* -------- búsqueda (Fuse) + fallback -------- */
+  function initFuse(){
+    if (typeof Fuse==='undefined') return;
+    fuse = new Fuse(data, {
+      includeScore: true,
+      threshold: 0.50,           // más permisivo
+      keys: [
+        { name:'pregunta',  weight:0.6 },
+        { name:'tema',      weight:0.2 },
+        { name:'etiquetas', weight:0.2 }
+      ]
+    });
+  }
+
+  function keywordFallback(q){
+    const has = (s,k) => stripAccents(String(s||'').toLowerCase()).includes(k);
+    const pick = (pred) => data.find(pred);
+
+    const tryKeyword = (k, tema) => {
+      if (!q.includes(k)) return null;
+      // 1) por tema
+      let item = pick(x => has(x.tema, tema));
+      if (item) return { html:item.respuesta, options:[] };
+      // 2) por etiquetas
+      item = pick(x => Array.isArray(x.etiquetas) && x.etiquetas.some(t => has(t,k)));
+      if (item) return { html:item.respuesta, options:[] };
+      return null;
+    };
+
+    return (
+      tryKeyword('calendario','calendario') ||
+      tryKeyword('horario','horario')       ||
+      tryKeyword('comedor','comedor')       ||
+      tryKeyword('libros','libros')         ||
+      tryKeyword('material','material')     ||
+      tryKeyword('extraescolar','extraescolar') ||
+      tryKeyword('transporte','transporte')
+    );
+  }
+
+  function respond(text){
+    // manejo de Sí/No del saludo
+    if (awaitingConsentForChips){
+      const t = stripAccents(text.toLowerCase().trim());
+      const afirm = ['si','sí','vale','ok','de acuerdo','claro','por supuesto'].map(stripAccents);
+      const neg   = ['no','nop','negativo'];
+      if (afirm.includes(t)) { awaitingConsentForChips = false; return { html:'Perfecto 👍 Te dejo algunos temas por si te orienta 👇', options:getSuggestions() }; }
+      if (neg.includes(t))   { awaitingConsentForChips = false; return { html:'Perfecto, pues dime qué necesitas. 🙂', options:[] }; }
+      // si no es sí/no, seguimos con búsqueda
+      awaitingConsentForChips = false;
+    }
+
+    // acceso rápido a contacto humano
+    if (/(humano|persona|secretar)/i.test(text)){
+      return { html:'📞 Secretaría: <a href="tel:+34968336433">968 33 64 33</a> · <a href="mailto:secretaria@virgendelpasico.net">secretaria@virgendelpasico.net</a> (9:00–14:00)', options:[] };
+    }
+
+    const q = stripAccents(text.toLowerCase().trim());
+
+    // 1) Intentar con Fuse
+    const res = (fuse ? fuse.search(text) : []).slice(0,1);
+
+    // 2) Si no hay resultado claro, probar fallback por palabra clave
+    if (!res.length || res[0].score > 0.70){
+      const fb = keywordFallback(q);
+      if (fb) return fb;
+      return { html:'No estoy del todo seguro 🤔. Prueba con una palabra clave (p. ej., “comedor”, “calendario”) o dime un poco más.', options:getSuggestions() };
+    }
+
+    // 3) Aceptar el mejor resultado
+    const hit = res[0].item;
+    return { html: hit.respuesta, options:[] };
+  }
+
+  /* -------- flujo de arranque -------- */
+  function init(){ const hasHist = !!localStorage.getItem(LS_KEY); if (hasHist) loadHistory(); else greet(); }
+
+  // Cargar FAQs y arrancar
+  fetch('./faqs.json', { cache:'no-store' })
+    .then(r => r.json())
+    .then(json => { data = json || []; initFuse(); init(); })
+    .catch(()   => { data = []; init(); });
+
+  /* -------- eventos UI -------- */
+  sendBtn.addEventListener('click', () => {
+    const text = (input.value || '').trim(); if (!text) return;
+    addBubble(text,'user'); input.value = '';
+    const reply = respond(text); showReply(reply);
   });
-  </script>
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendBtn.click();
+  });
+
+  clearBtn.addEventListener('click', clearHistory);
+});
+</script>
+
 </body>
 </html>
