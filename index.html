@@ -219,13 +219,51 @@
       if (!fuse || !data.length){
         return { html:'Ahora mismo no tengo la base cargada. Prueba con una palabra clave (p. ej., “comedor”, “calendario”).', options:getSuggestions() };
       }
-      const res = fuse.search(text).slice(0,1);
-      if (!res.length || res[0].score > 0.55){
-        return { html:'No estoy del todo seguro 🤔. Prueba con una palabra clave (p. ej., “comedor”, “calendario”) o dime un poco más.', options:getSuggestions() };
-      }
-      const hit = res[0].item;
-      return { html: hit.respuesta, options:[] };
-    }
+      // --- BLOQUE NUEVO (pegar en su lugar) ---
+const q = stripAccents(text.toLowerCase().trim());
+
+// Fallback directo por palabra clave (calendario, horario, comedor, etc.)
+const keywordFallback = (q) => {
+  const pick = (pred) => data.find(pred);
+  const has = (s,k) => stripAccents(String(s||'').toLowerCase()).includes(k);
+
+  const tryKeyword = (k, tema) => {
+    if (!q.includes(k)) return null;
+    // 1) por tema
+    let item = pick(x => has(x.tema, tema));
+    if (item) return { html: item.respuesta, options: [] };
+    // 2) por etiquetas
+    item = pick(x => Array.isArray(x.etiquetas) && x.etiquetas.some(t => has(t, k)));
+    if (item) return { html: item.respuesta, options: [] };
+    return null;
+  };
+
+  // añade más si quieres
+  return (
+    tryKeyword('calendario','calendario') ||
+    tryKeyword('horario','horario')       ||
+    tryKeyword('comedor','comedor')      ||
+    tryKeyword('libros','libros')        ||
+    tryKeyword('material','material')    ||
+    tryKeyword('extraescolar','extraescolar') ||
+    tryKeyword('transporte','transporte')
+  );
+};
+
+// 1) prueba Fuse
+const res = (fuse ? fuse.search(text) : []).slice(0,1);
+
+// 2) si no convence el score, usa fallback por palabra clave
+if (!res.length || res[0].score > 0.70) {
+  const fb = keywordFallback(q);
+  if (fb) return fb;
+  return { html:'No estoy del todo seguro 🤔. Prueba con una palabra clave (p. ej., “comedor”, “calendario”) o dime un poco más.', options: getSuggestions() };
+}
+
+// 3) acepta el mejor resultado
+const hit = res[0].item;
+return { html: hit.respuesta, options: [] };
+
 
     function init(){ const hasHist = !!localStorage.getItem(LS_KEY); if (hasHist) loadHistory(); else greet(); }
 
